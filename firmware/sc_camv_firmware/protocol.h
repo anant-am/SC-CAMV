@@ -5,6 +5,8 @@
 #include "sensors.h"
 #include "actuation.h"
 
+void initBluetooth();
+
 void sendTelemetryFrame(
   uint32_t seq,
   uint32_t timestampMs,
@@ -12,6 +14,16 @@ void sendTelemetryFrame(
   uint8_t activePwm,
   const char* motorStateStr,
   EmbeddedState state
+);
+
+void sendBluetoothTelemetryFrame(
+  uint32_t seq,
+  uint32_t timestampMs,
+  const SensorReadings& r,
+  uint8_t activePwm,
+  const char* motorStateStr,
+  EmbeddedState state,
+  bool isEmergencyStopped
 );
 
 enum CommandType {

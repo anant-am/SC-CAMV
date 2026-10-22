@@ -39,6 +39,10 @@ export interface RawSensorFrame {
   ir_raw_state?: number;
   amb_temp_c: number | null;
   amb_hum_pct: number | null;
+  lm35_temp_c?: number | null;
+  fused_temp_c?: number | null;
+  temp_source?: string;
+  temp_valid?: boolean;
   motor_pwm: number;
   commanded_motor_state?: MotorState;
   inferred_motor_state?: MotorState;

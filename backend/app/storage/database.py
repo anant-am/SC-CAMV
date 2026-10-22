@@ -40,6 +40,7 @@ class DatabaseManager:
                 CREATE TABLE IF NOT EXISTS telemetry_history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     timestamp_ms INTEGER NOT NULL,
+                    timestamp_iso TEXT,
                     sequence_id INTEGER NOT NULL,
                     current_a REAL,
                     current_raw_adc INTEGER,
@@ -52,6 +53,15 @@ class DatabaseManager:
                     ir_raw_state INTEGER DEFAULT 1,
                     amb_temp_c REAL,
                     amb_hum_pct REAL,
+                    lm35_temp_c REAL,
+                    dht11_temp_c REAL,
+                    fused_temp_c REAL,
+                    temp_source TEXT DEFAULT 'NONE',
+                    temp_valid INTEGER DEFAULT 0,
+                    lm35_ok INTEGER DEFAULT 0,
+                    dht_ok INTEGER DEFAULT 0,
+                    machine_state TEXT DEFAULT 'STOPPED',
+                    is_estop INTEGER DEFAULT 0,
                     motor_pwm INTEGER DEFAULT 0,
                     commanded_state TEXT DEFAULT 'STOPPED',
                     inferred_state TEXT DEFAULT 'STOPPED',
@@ -64,10 +74,11 @@ class DatabaseManager:
                 CREATE INDEX IF NOT EXISTS idx_telemetry_time ON telemetry_history(timestamp_ms)
             """)
 
-            # Ensure any missing columns exist on existing databases
+            # Ensure any missing columns exist on existing databases (automatic migration)
             cursor.execute("PRAGMA table_info(telemetry_history)")
             existing_cols = {row["name"] for row in cursor.fetchall()}
             needed_cols = {
+                "timestamp_iso": "TEXT",
                 "current_raw_adc": "INTEGER",
                 "current_v": "REAL",
                 "ax": "REAL",
@@ -79,6 +90,15 @@ class DatabaseManager:
                 "inferred_state": "TEXT DEFAULT 'STOPPED'",
                 "source": "TEXT DEFAULT 'SIMULATED'",
                 "active_faults_json": "TEXT",
+                "lm35_temp_c": "REAL",
+                "dht11_temp_c": "REAL",
+                "fused_temp_c": "REAL",
+                "temp_source": "TEXT DEFAULT 'NONE'",
+                "temp_valid": "INTEGER DEFAULT 0",
+                "lm35_ok": "INTEGER DEFAULT 0",
+                "dht_ok": "INTEGER DEFAULT 0",
+                "machine_state": "TEXT DEFAULT 'STOPPED'",
+                "is_estop": "INTEGER DEFAULT 0",
             }
             for col_name, col_type in needed_cols.items():
                 if col_name not in existing_cols:
@@ -144,17 +164,27 @@ class DatabaseManager:
             conn.commit()
 
     def insert_telemetry(self, frame: RawSensorFrame):
+        now_iso = datetime.now(timezone.utc).isoformat()
+        lm35_valid = 1 if (frame.lm35_temp_c is not None and 0.0 <= frame.lm35_temp_c <= 120.0) else 0
+        dht_valid = 1 if (frame.amb_temp_c is not None and 0.0 <= frame.amb_temp_c <= 60.0) else 0
+        temp_valid = 1 if frame.temp_valid else (1 if (lm35_valid or dht_valid) else 0)
+
+        cmd_state_str = frame.commanded_motor_state.value if hasattr(frame.commanded_motor_state, "value") else str(frame.commanded_motor_state)
+        is_estop = 1 if cmd_state_str in ["FAULT", "CRITICAL", "HARD_LOCKOUT"] else 0
+
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO telemetry_history (
-                    timestamp_ms, sequence_id, current_a, current_raw_adc, current_v,
+                    timestamp_ms, timestamp_iso, sequence_id, current_a, current_raw_adc, current_v,
                     vibe_g, ax, ay, az, ir_object_detected, ir_raw_state,
-                    amb_temp_c, amb_hum_pct, motor_pwm, commanded_state,
-                    inferred_state, source, is_simulated, active_faults_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    amb_temp_c, amb_hum_pct, lm35_temp_c, dht11_temp_c, fused_temp_c,
+                    temp_source, temp_valid, lm35_ok, dht_ok, machine_state, is_estop,
+                    motor_pwm, commanded_state, inferred_state, source, is_simulated, active_faults_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 frame.timestamp_ms,
+                now_iso,
                 frame.sequence_id,
                 frame.current_a,
                 frame.current_raw_adc,
@@ -167,8 +197,17 @@ class DatabaseManager:
                 frame.ir_raw_state,
                 frame.amb_temp_c,
                 frame.amb_hum_pct,
+                frame.lm35_temp_c,
+                frame.amb_temp_c,
+                frame.fused_temp_c,
+                frame.temp_source,
+                temp_valid,
+                lm35_valid,
+                dht_valid,
+                cmd_state_str,
+                is_estop,
                 frame.motor_pwm,
-                frame.commanded_motor_state.value if hasattr(frame.commanded_motor_state, "value") else str(frame.commanded_motor_state),
+                cmd_state_str,
                 frame.inferred_motor_state.value if hasattr(frame.inferred_motor_state, "value") else str(frame.inferred_motor_state),
                 frame.source.value if hasattr(frame.source, "value") else str(frame.source),
                 1 if frame.is_simulated else 0,

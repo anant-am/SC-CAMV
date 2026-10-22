@@ -73,6 +73,12 @@ class RawSensorFrame(BaseModel):
     # Ambient Environmental Context (DHT11 on D4) - Room context ONLY, NOT motor temperature
     amb_temp_c: Optional[float] = Field(None, description="Ambient room temperature from DHT11 (deg C)")
     amb_hum_pct: Optional[float] = Field(None, description="Ambient relative humidity from DHT11 (%)")
+
+    # LM35 Contact Surface Temperature Sensor (A0) & Temperature Fusion
+    lm35_temp_c: Optional[float] = Field(None, description="Contact surface temperature from LM35 on A0 (deg C)")
+    fused_temp_c: Optional[float] = Field(None, description="Fused temperature calculated from LM35 and DHT11 (deg C)")
+    temp_source: str = Field("NONE", description="Source of displayed temperature: FUSED, LM35, DHT11, or NONE")
+    temp_valid: bool = Field(False, description="Whether displayed temperature is valid")
     
     # Motor Actuation & State
     motor_pwm: int = Field(0, description="Motor PWM duty cycle command (0-255, starts at 0 for safe stopped startup)")

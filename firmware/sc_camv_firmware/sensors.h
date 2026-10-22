@@ -32,6 +32,17 @@ struct SensorReadings {
   float amb_temp_c;
   float amb_hum_pct;
   bool is_dht_valid;
+
+  // LM35 Contact Surface Temperature Sensor (A0)
+  uint16_t lm35_raw_adc;
+  float lm35_v;
+  float lm35_c;
+  bool is_lm35_valid;
+
+  // Fused / Displayed Temperature
+  float fused_temp_c;
+  bool is_temp_valid;
+  const char* temp_source_str; // "FUSED", "LM35", "DHT11", or "NONE"
 };
 
 void initSensors();

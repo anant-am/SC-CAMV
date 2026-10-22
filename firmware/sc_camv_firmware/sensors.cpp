@@ -80,6 +80,7 @@ static bool readDHT11Raw(uint8_t pin, float& outTemp, float& outHum) {
 void initSensors() {
   // Configure analog pins
   pinMode(PIN_ACS712, INPUT);
+  pinMode(PIN_LM35, INPUT);
 
   // Configure digital inputs
   pinMode(PIN_IR_OBSTACLE, INPUT);
@@ -244,6 +245,54 @@ SensorReadings readAllSensors() {
   r.amb_temp_c = s_cachedAmbTemp;
   r.amb_hum_pct = s_cachedAmbHum;
   r.is_dht_valid = s_cachedDhtValid;
+
+  // ---------------------------------------------------------------------------
+  // 5. LM35 Contact Surface Temperature Sensor (A0)
+  // ---------------------------------------------------------------------------
+  uint32_t lmSum = 0;
+  for (int i = 0; i < 16; i++) {
+    lmSum += analogRead(PIN_LM35);
+    delayMicroseconds(25);
+  }
+  r.lm35_raw_adc = lmSum / 16;
+  r.lm35_v = (r.lm35_raw_adc * 5.0f) / 1023.0f;
+  // LM35 generates linear 10 mV/°C (100.0 °C / Volt)
+  float rawLm35Temp = r.lm35_v * 100.0f;
+
+  // Validity check: Disconnected/floating pin reads near 0 or saturates (>900)
+  // Valid operating range for electro-mechanical surface: 2°C to 120°C (raw ADC 4 to 250)
+  if (r.lm35_raw_adc >= 4 && r.lm35_raw_adc <= 250 && rawLm35Temp >= 2.0f && rawLm35Temp <= 120.0f) {
+    r.lm35_c = rawLm35Temp;
+    r.is_lm35_valid = true;
+  } else {
+    r.lm35_c = 0.0f;
+    r.is_lm35_valid = false;
+  }
+
+  // ---------------------------------------------------------------------------
+  // 6. Fused Temperature Calculation (LM35 + DHT11)
+  // ---------------------------------------------------------------------------
+  if (r.is_lm35_valid && r.is_dht_valid) {
+    // Case 1: Both sensors valid -> Arithmetic mean
+    r.fused_temp_c = (r.lm35_c + r.amb_temp_c) / 2.0f;
+    r.is_temp_valid = true;
+    r.temp_source_str = "FUSED";
+  } else if (r.is_lm35_valid && !r.is_dht_valid) {
+    // Case 2: Only LM35 valid -> Single-sensor fallback
+    r.fused_temp_c = r.lm35_c;
+    r.is_temp_valid = true;
+    r.temp_source_str = "LM35";
+  } else if (!r.is_lm35_valid && r.is_dht_valid) {
+    // Case 3: Only DHT11 valid -> Single-sensor fallback
+    r.fused_temp_c = r.amb_temp_c;
+    r.is_temp_valid = true;
+    r.temp_source_str = "DHT11";
+  } else {
+    // Case 4: Neither valid -> Unavailable (do not fabricate)
+    r.fused_temp_c = 0.0f;
+    r.is_temp_valid = false;
+    r.temp_source_str = "NONE";
+  }
 
   return r;
 }

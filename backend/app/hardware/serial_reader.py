@@ -331,8 +331,37 @@ class SerialHardwareManager:
                         ir_det = bool(data.get("ir_det", ir_raw == 0))
 
                         # DHT11 environmental readings
-                        amb_t = data.get("amb_t", data.get("amb_temp"))
-                        amb_h = data.get("amb_h", data.get("amb_hum"))
+                        amb_t = data.get("amb_t", data.get("amb_temp", data.get("dht_c")))
+                        amb_h = data.get("amb_h", data.get("amb_hum", data.get("dht_h")))
+                        dht_ok = bool(data.get("dht_ok", amb_t is not None and (0.0 <= amb_t <= 60.0)))
+
+                        # LM35 contact surface readings
+                        lm35_c = data.get("lm35_c")
+                        lm35_ok = bool(data.get("lm35_ok", lm35_c is not None and (0.0 <= lm35_c <= 120.0)))
+
+                        # Temperature Fusion: LM35 + DHT11 (Section 3)
+                        if data.get("temp_c") is not None and data.get("temp_valid") is not None:
+                            fused_temp = float(data["temp_c"]) if data.get("temp_valid") else None
+                            temp_valid = bool(data.get("temp_valid"))
+                            temp_src = str(data.get("temp_src", "FUSED" if (lm35_ok and dht_ok) else ("LM35" if lm35_ok else ("DHT11" if dht_ok else "NONE"))))
+                        else:
+                            # 4-case temperature fusion
+                            if lm35_ok and dht_ok:
+                                fused_temp = round((float(lm35_c) + float(amb_t)) / 2.0, 2)
+                                temp_valid = True
+                                temp_src = "FUSED"
+                            elif lm35_ok:
+                                fused_temp = round(float(lm35_c), 2)
+                                temp_valid = True
+                                temp_src = "LM35"
+                            elif dht_ok:
+                                fused_temp = round(float(amb_t), 2)
+                                temp_valid = True
+                                temp_src = "DHT11"
+                            else:
+                                fused_temp = None
+                                temp_valid = False
+                                temp_src = "NONE"
 
                         # Motor actuation feedback
                         pwm_val = int(data.get("pwm", 0))
@@ -371,6 +400,10 @@ class SerialHardwareManager:
                             ir_raw_state=ir_raw,
                             amb_temp_c=amb_t,
                             amb_hum_pct=amb_h,
+                            lm35_temp_c=lm35_c,
+                            fused_temp_c=fused_temp,
+                            temp_source=temp_src,
+                            temp_valid=temp_valid,
                             motor_pwm=pwm_val,
                             commanded_motor_state=cmd_state,
                             inferred_motor_state=inf_state,
@@ -380,7 +413,8 @@ class SerialHardwareManager:
                                 "acs712": "OK" if curr_a is not None else "DEGRADED",
                                 "mpu6050": "OK" if data.get("mpu_ok", True) else "ERROR",
                                 "ir_obstacle": "OK",
-                                "dht11": "OK" if data.get("dht_ok", True) else "DEGRADED",
+                                "dht11": "OK" if dht_ok else "DEGRADED",
+                                "lm35": "OK" if lm35_ok else "DEGRADED",
                             }
                         )
 

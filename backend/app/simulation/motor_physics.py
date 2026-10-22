@@ -49,9 +49,10 @@ class DCMotorPhysicsSimulator:
         self.time_ms: int = 0
         self.sequence_id: int = 0
 
-        # Environmental room context (DHT11)
+        # Environmental room context (DHT11) & Casing Surface (LM35)
         self.amb_temp_c: float = 26.8
         self.amb_hum_pct: float = 75.0
+        self.casing_temp_c: float = 28.4
 
         # Mechanical disturbance variables
         self.load_torque: float = 0.0
@@ -72,6 +73,7 @@ class DCMotorPhysicsSimulator:
             "ir_stuck_high": False,
             "dht11_disconnected": False,
             "dht11_invalid": False,
+            "lm35_disconnected": False,
         }
 
         self.rng = random.Random(seed)
@@ -201,16 +203,50 @@ class DCMotorPhysicsSimulator:
             ir_raw = 1
             ir_det = False
 
-        # DHT11 Environmental Context
+        # DHT11 Environmental Context & LM35 Contact Surface Context
         if self.faults.get("dht11_disconnected"):
             meas_amb_t = None
             meas_amb_h = None
+            dht_ok = False
         elif self.faults.get("dht11_invalid"):
             meas_amb_t = -99.0
             meas_amb_h = 150.0
+            dht_ok = False
         else:
             meas_amb_t = round(self.amb_temp_c + self.rng.gauss(0.0, 0.05 * self.sensor_noise_scale), 1)
             meas_amb_h = round(self.amb_hum_pct + self.rng.gauss(0.0, 0.15 * self.sensor_noise_scale), 1)
+            dht_ok = True
+
+        # LM35 Contact Surface Temperature
+        if self.faults.get("lm35_disconnected"):
+            meas_lm35_t = None
+            lm35_ok = False
+        else:
+            # Heat dissipation and slight thermal rise with current
+            if self.current_a > 0.1:
+                self.casing_temp_c = min(85.0, self.casing_temp_c + (0.015 * (self.current_a ** 2) - 0.005 * (self.casing_temp_c - self.amb_temp_c)) * dt_s)
+            else:
+                self.casing_temp_c = max(self.amb_temp_c, self.casing_temp_c - 0.01 * (self.casing_temp_c - self.amb_temp_c) * dt_s)
+            meas_lm35_t = round(self.casing_temp_c + self.rng.gauss(0.0, 0.08 * self.sensor_noise_scale), 1)
+            lm35_ok = True
+
+        # Temperature Fusion: LM35 + DHT11 (Section 3)
+        if lm35_ok and dht_ok:
+            fused_temp = round((meas_lm35_t + meas_amb_t) / 2.0, 2)
+            temp_valid = True
+            temp_src = "FUSED"
+        elif lm35_ok:
+            fused_temp = round(meas_lm35_t, 2)
+            temp_valid = True
+            temp_src = "LM35"
+        elif dht_ok:
+            fused_temp = round(meas_amb_t, 2)
+            temp_valid = True
+            temp_src = "DHT11"
+        else:
+            fused_temp = None
+            temp_valid = False
+            temp_src = "NONE"
 
         # Motor commanded vs inferred states
         if pwm_clamped == 0:
@@ -244,6 +280,10 @@ class DCMotorPhysicsSimulator:
             ir_raw_state=ir_raw,
             amb_temp_c=meas_amb_t,
             amb_hum_pct=meas_amb_h,
+            lm35_temp_c=meas_lm35_t,
+            fused_temp_c=fused_temp,
+            temp_source=temp_src,
+            temp_valid=temp_valid,
             motor_pwm=pwm_clamped,
             commanded_motor_state=cmd_state,
             inferred_motor_state=inf_state,

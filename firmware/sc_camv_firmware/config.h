@@ -34,15 +34,20 @@
 // Piezo Buzzer
 #define PIN_BUZZER          6     // D6:  Audible alarm pulse control
 
-// HC-05 Bluetooth Transport (Optional Alternate to USB UART)
+// LM35 Contact Surface Temperature Sensor
+#define PIN_LM35            A0    // A0:  Analog in: Linear 10 mV/°C temperature sensor
+
+// HC-05 Bluetooth Transport (SoftwareSerial on D11 RX, D7 TX)
 #define PIN_HC05_RX         11    // D11: SoftwareSerial RX (connected to HC-05 TXD)
 #define PIN_HC05_TX         7     // D7:  SoftwareSerial TX (via 1k/2k divider to HC-05 RXD)
+#define HC05_BAUD_RATE      9600  // HC-05 default communication baud rate
 
 // ==============================================================================
 // PROTOCOL & TIMING PARAMETERS
 // ==============================================================================
-#define SERIAL_BAUD_RATE    9600
-#define SAMPLE_INTERVAL_MS  200   // 5 Hz Telemetry Broadcast
+#define SERIAL_BAUD_RATE          9600
+#define SAMPLE_INTERVAL_MS        200   // 5 Hz Telemetry Broadcast for USB Serial
+#define BT_TELEMETRY_INTERVAL_MS  400   // 2.5 Hz Broadcast for Bluetooth Serial Terminal
 #define DEFAULT_DEMO_PWM    150   // Default intended demonstration setting after explicit start
 #define PROTOCOL_VERSION    "1.0"
 #define FIRMWARE_VERSION    "SC-CAMV_v1.0"

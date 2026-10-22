@@ -36,6 +36,7 @@ This document defines the final hardware pin assignments, electrical characteris
    D8          PIN_MOTOR_IN2  OUT     L293D IN2 Direction Terminal 2
    D2          PIN_IR_OBSTACLE IN     IR Stationary Obstacle (Active LOW)
    D4          PIN_DHT11      IN/OUT  DHT11 Single-Wire Ambient Context
+   A0          PIN_LM35       ANALOG  LM35 Contact Motor Casing Temp (10 mV/°C)
    A1          PIN_ACS712     ANALOG  ACS712 Hall-Effect Armature Current
    A4          PIN_MPU_SDA    I2C     MPU6050 I²C SDA (Address 0x68)
    A5          PIN_MPU_SCL    I2C     MPU6050 I²C SCL (100 kHz Bus Clock)
@@ -43,7 +44,7 @@ This document defines the final hardware pin assignments, electrical characteris
    D13         PIN_LED_RED    OUT     Warning / Failsafe Trip LED
    D6          PIN_BUZZER     OUT     Audible Hazard Annunciator Control
    D11         PIN_HC05_RX    IN      SoftwareSerial RX (Connected to HC-05 TXD)
-   D7          PIN_HC05_TX    OUT     SoftwareSerial TX (to HC-05 RXD via divider)
+   D7          PIN_HC05_TX    OUT     SoftwareSerial TX (to HC-05 RXD via 1k/2k divider)
    5V          VCC            PWR     Sensor & Driver Logic 5V Rail
    GND         GND            GND     Common System Ground
    ========================================================================
@@ -51,11 +52,19 @@ This document defines the final hardware pin assignments, electrical characteris
 
 ---
 
-### 3. Decommissioning of LM35 Temperature Sensor
-The LM35 contact temperature sensor has been permanently decommissioned and removed from the active SC-CAMV configuration.
-- Analog pin A0 is disconnected and unused.
-- Ambient room reference readings are provided solely by the DHT11 sensor on D4.
-- The DHT11 strictly measures ambient air and is never misrepresented as direct motor casing or winding temperature.
+### 3. Temperature Fusion Architecture (LM35 + DHT11)
+The active SC-CAMV configuration integrates dual temperature sensing for robust environmental context and motor surface monitoring:
+- **LM35 Sensor (A0)**: Mounted with thermal interface material on the motor casing surface. Produces linear 10 mV/°C ($V_{\text{out}} = 0.010 \times T$). Sampled with 16-sample ADC averaging on pin A0.
+- **DHT11 Sensor (D4)**: Single-wire digital sensor providing ambient room reference temperature ($T_{\text{amb}}$) and relative humidity ($\text{RH}\%$).
+- **Fused Temperature Calculation**:
+  When both sensors yield valid, fresh readings:
+  $$\text{fused\_temperature\_c} = \frac{\text{lm35\_temperature\_c} + \text{dht11\_temperature\_c}}{2.0}$$
+- **Fallback & Validity Rules**:
+  1. **Both valid (`lm35_ok && dht_ok`)**: Fused temperature is the arithmetic mean; `temp_src = "FUSED"`, `temp_valid = true`.
+  2. **Only LM35 valid (`lm35_ok && !dht_ok`)**: Fallback to LM35; `temp_src = "LM35"`, `temp_valid = true`.
+  3. **Only DHT11 valid (`!lm35_ok && dht_ok`)**: Fallback to DHT11; `temp_src = "DHT11"`, `temp_valid = true`.
+  4. **Neither valid (`!lm35_ok && !dht_ok`)**: Displayed temperature is reported as unavailable (`null`); `temp_src = "NONE"`, `temp_valid = false`. Never fabricated.
+- **Scientific Integrity & Calibration Notice**: Arithmetic averaging provides a multi-sensor fusion estimate but does not inherently guarantee laboratory absolute accuracy due to differing thermal response times and sensor tolerances. Calibration against a certified reference thermometer is recommended for precision applications. Existing motor protection thresholds remain strictly enforced.
 
 ---
 

@@ -311,7 +311,7 @@ class MonitoringEngine:
             f.ir_object_detected = False
             f.ir_raw_state = 1
 
-        # 4. DHT11 Ambient Sensor Faults
+        # 4. DHT11 Ambient & LM35 Casing Sensor Faults
         if self.active_faults.get("dht11_disconnected"):
             f.amb_temp_c = None
             f.amb_hum_pct = None
@@ -319,6 +319,30 @@ class MonitoringEngine:
         elif self.active_faults.get("dht11_invalid"):
             f.amb_temp_c = -99.0
             f.amb_hum_pct = 150.0
+
+        if self.active_faults.get("lm35_disconnected"):
+            f.lm35_temp_c = None
+            f.sensor_statuses["lm35"] = "DISCONNECTED"
+
+        # Re-evaluate Temperature Fusion after fault overlays
+        lm35_ok = f.lm35_temp_c is not None and (0.0 <= f.lm35_temp_c <= 120.0)
+        dht_ok = f.amb_temp_c is not None and (0.0 <= f.amb_temp_c <= 60.0)
+        if lm35_ok and dht_ok:
+            f.fused_temp_c = round((f.lm35_temp_c + f.amb_temp_c) / 2.0, 2)
+            f.temp_valid = True
+            f.temp_source = "FUSED"
+        elif lm35_ok:
+            f.fused_temp_c = round(f.lm35_temp_c, 2)
+            f.temp_valid = True
+            f.temp_source = "LM35"
+        elif dht_ok:
+            f.fused_temp_c = round(f.amb_temp_c, 2)
+            f.temp_valid = True
+            f.temp_source = "DHT11"
+        else:
+            f.fused_temp_c = None
+            f.temp_valid = False
+            f.temp_source = "NONE"
 
         # 5. Multi-Factor Failure Compound
         if self.active_faults.get("multiple_simultaneous_faults"):

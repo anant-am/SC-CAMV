@@ -33,6 +33,7 @@ void setup() {
   // Initialize sensors and hardware actuation
   initSensors();
   initActuation(); // Motor starts in safe STOPPED state (PWM 0)
+  initBluetooth(); // Initialize HC-05 SoftwareSerial interface
 
   // Announce startup
   Serial.println(F("{\"type\":\"BOOT_READY\",\"firmware\":\"" FIRMWARE_VERSION "\",\"proto\":\"" PROTOCOL_VERSION "\",\"motor\":\"STOPPED\",\"pwm\":0}"));
@@ -157,15 +158,44 @@ void loop() {
     }
 
     // -------------------------------------------------------------------------
-    // 4. Send Framed Telemetry JSON to Host
+    // 4. Send Framed Telemetry JSON to Host (USB Serial at 5 Hz)
     // -------------------------------------------------------------------------
     sendTelemetryFrame(
-      s_sequenceId++,
+      s_sequenceId,
       now,
       readings,
       getActivePWM(),
       motorStr,
       s_currentState
     );
+
+    // -------------------------------------------------------------------------
+    // 5. Send Bluetooth Telemetry to HC-05 (SoftwareSerial at 2.5 Hz / on change)
+    // Works continuously even when motor is stopped
+    // -------------------------------------------------------------------------
+    static uint32_t s_lastBtMs = 0;
+    static EmbeddedState s_lastBtState = EMB_STOPPED;
+    static bool s_lastBtMotorRunning = false;
+    bool motorRunning = isMotorRunning();
+
+    if ((uint32_t)(now - s_lastBtMs) >= BT_TELEMETRY_INTERVAL_MS ||
+        s_currentState != s_lastBtState ||
+        motorRunning != s_lastBtMotorRunning) {
+      s_lastBtMs = now;
+      s_lastBtState = s_currentState;
+      s_lastBtMotorRunning = motorRunning;
+
+      sendBluetoothTelemetryFrame(
+        s_sequenceId,
+        now,
+        readings,
+        getActivePWM(),
+        motorStr,
+        s_currentState,
+        s_isEmergencyStopped
+      );
+    }
+
+    s_sequenceId++;
   }
 }
